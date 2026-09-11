@@ -1,0 +1,9 @@
+/build/
+/.deps/
+/.venv/
+/output/
+/models/*.onnx
+/models/*.part
+__pycache__/
+.DS_Store
+/tests/images/*
