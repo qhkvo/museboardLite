@@ -1,0 +1,32 @@
+# Builds the executable, processing library, and tests.
+
+cmake_minimum_required(VERSION 3.20)
+project(museboard_lite VERSION 0.1.0 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs)
+set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime installation prefix")
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
+    HINTS ${ONNXRUNTIME_ROOT} ENV ONNXRUNTIME_ROOT
+    PATH_SUFFIXES include include/onnxruntime include/onnxruntime/core/session)
+find_library(ONNXRUNTIME_LIBRARY NAMES onnxruntime
+    HINTS ${ONNXRUNTIME_ROOT} ENV ONNXRUNTIME_ROOT PATH_SUFFIXES lib lib64)
+if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
+    message(FATAL_ERROR "ONNX Runtime not found. Set -DONNXRUNTIME_ROOT=/path/to/install")
+endif()
+add_library(museboard_processing src/processing.cpp)
+target_include_directories(museboard_processing PUBLIC include ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(museboard_processing PUBLIC ${OpenCV_LIBS})
+target_compile_options(museboard_processing PRIVATE -Wall -Wextra -Wpedantic)
+add_executable(museboard-prototype src/main.cpp src/encoder.cpp)
+target_include_directories(museboard-prototype PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+target_link_libraries(museboard-prototype PRIVATE museboard_processing ${ONNXRUNTIME_LIBRARY})
+target_compile_options(museboard-prototype PRIVATE -Wall -Wextra -Wpedantic)
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(processing-tests tests/processing_test.cpp)
+    target_link_libraries(processing-tests PRIVATE museboard_processing)
+    add_test(NAME processing COMMAND processing-tests)
+endif()
