@@ -105,7 +105,7 @@ export function Discovery({
           id="subject-tags"
           value={tags}
           disabled={saving}
-          placeholder="e.g. dog, animal"
+          placeholder=" e.g. dog, animal"
           onChange={(event) => {
             setTags(event.target.value)
             setTagSaved(false)
