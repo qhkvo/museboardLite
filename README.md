@@ -149,13 +149,3 @@ QA and subjective CLIP relevance still need manual validation.
 | Changes do not appear | Rebuild the affected service and refresh the browser. |
 | Port already in use | Stop other processes using ports 5173, 8000, or 5433. |
 | Tests skip | Set the database URL and enable the real-worker test as shown above. |
-
-## Further reading
-
-- [MVP scope and implementation roadmap](docs/MVP.md)
-- [Software design](docs/SDD.md)
-- [C++ workers, job queue, and recovery](docs/phase3.md)
-- [Discovery API, migration, and sample images](docs/phase4.md)
-
-The current app runs locally. Protected cloud deployment and portfolio packaging
-remain planned work.
