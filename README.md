@@ -5,9 +5,11 @@
 1. Install Docker Desktop if needed, then open it and wait until the engine is running.
 2. Open a terminal in the repository root (the folder containing `compose.yaml`).
    In VS Code, use **Terminal → New Terminal** with this project open.
-3. Build and start the frontend, backend, and PostgreSQL together:
+3. Configure the worker credential, download the pinned model, and start all services:
 
 ```sh
+python3 scripts/configure_workers.py
+python3 scripts/download_model.py
 docker compose up --build -d
 ```
 
@@ -21,7 +23,8 @@ Check that the services have started:
 docker compose ps
 ```
 
-Expect `web`, `api`, and `db` to be running, with `api` and `db` marked healthy.
+Expect `web`, `api`, `db`, two `cpu-worker` containers, and one `ai-worker` container
+to be running, with `api` and `db` marked healthy.
 
 | Service | Address | Purpose |
 | --- | --- | --- |
@@ -33,9 +36,9 @@ Create a board in the UI, then drag in JPEG/PNG images or use **Add images**.
 The app uploads up to three files concurrently, displays per-file progress/errors,
 and lets you open each original image. Uploads are limited to 20 MiB per file.
 
-**No C++ bootstrap, Node.js installation, or Python virtual environment is needed to
-run the Phase 2 app through Docker.** Those tools are only needed when developing or
-testing outside the containers, or using the separate Phase 1 prototype.
+**No native C++ build, Node.js installation, or Python virtual environment is needed
+to run the app through Docker.** Python 3 runs the initial credential/model setup.
+Thumbnails, palettes, and processing states appear automatically after uploading.
 
 ### Everyday commands
 
@@ -63,7 +66,7 @@ Press **Ctrl+C** to stop following logs; the containers keep running.
 ### Saved data
 
 Boards and image records live in the `postgres_data` Docker volume. Original image
-files live in the `image_data` Docker volume. Both survive `docker compose down`
+files live in `image_data`; thumbnails live in `thumbnail_data`. All survive `docker compose down`
 and ordinary rebuilds, so you can stop the app and continue later.
 
 **Do not run `docker compose down -v` unless you intend to erase all boards and
@@ -71,7 +74,7 @@ uploaded images.** The `-v` option removes these volumes. Git commits and pushes
 not back up Docker volumes.
 
 This is a local single-user build bound to localhost, not a public authenticated
-deployment. Automatic C++ processing is planned for Phase 3.
+deployment.
 
 ### Troubleshooting
 

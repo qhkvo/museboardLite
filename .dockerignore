@@ -1,0 +1,11 @@
+.git
+.deps
+.venv
+build
+output
+data
+models/*.onnx
+backend/.venv
+frontend/node_modules
+frontend/dist
+.env

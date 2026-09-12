@@ -3,7 +3,7 @@ WORKDIR /app
 COPY requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock
 COPY app ./app
-RUN useradd --create-home museboard && mkdir -p /data && chown museboard:museboard /data
+RUN useradd --create-home museboard && mkdir -p /data/thumbnails && chown -R museboard:museboard /data
 USER museboard
 ENV STORAGE_DIR=/data
 EXPOSE 8000

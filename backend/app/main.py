@@ -13,6 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image, UnidentifiedImageError
 
+from .jobs import IMAGE_SELECT, register_jobs
+
 logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
@@ -22,10 +24,23 @@ class Settings:
     max_upload_bytes: int = 20 * 1024 * 1024
     max_pixels: int = 40_000_000
 
+    worker_token: str = ''
+    cpu_deadline_seconds: int = 120
+    ai_deadline_seconds: int = 300
+    max_attempts: int = 3
+
+    def __post_init__(self):
+        if min(self.cpu_deadline_seconds, self.ai_deadline_seconds, self.max_attempts) < 1:
+            raise ValueError('Worker deadlines and attempt limit must be positive.')
+
     @classmethod
     def from_env(cls):
         return cls(os.environ.get('DATABASE_URL', 'postgresql://museboard:museboard@127.0.0.1:5433/museboard_dev'),
-                   Path(os.environ.get('STORAGE_DIR', './data')).resolve())
+                   Path(os.environ.get('STORAGE_DIR', './data')).resolve(),
+                   worker_token=os.environ.get('WORKER_TOKEN', ''),
+                   cpu_deadline_seconds=int(os.environ.get('CPU_DEADLINE_SECONDS', '120')),
+                   ai_deadline_seconds=int(os.environ.get('AI_DEADLINE_SECONDS', '300')),
+                   max_attempts=int(os.environ.get('MAX_JOB_ATTEMPTS', '3')))
 
 class BoardCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -108,13 +123,14 @@ def create_app(settings: Settings | None = None):
     @asynccontextmanager
     async def lifespan(app):
         (settings.storage_dir / 'originals').mkdir(parents=True, exist_ok=True)
+        (settings.storage_dir / 'thumbnails').mkdir(parents=True, exist_ok=True)
         (settings.storage_dir / 'incoming').mkdir(parents=True, exist_ok=True)
         with connect() as conn:
             conn.execute('SELECT pg_advisory_xact_lock(71422002)')
             conn.execute(Path(__file__).with_name('schema.sql').read_text())
         yield
 
-    app = FastAPI(title='Museboard API', version='0.2.0', lifespan=lifespan)
+    app = FastAPI(title='Museboard API', version='0.3.0', lifespan=lifespan)
     app.add_middleware(BodyLimit, upload_limit=settings.max_upload_bytes)
 
     @app.exception_handler(psycopg.Error)
@@ -130,7 +146,9 @@ def create_app(settings: Settings | None = None):
         return row
 
     def image_json(row):
-        return {k: v for k, v in row.items() if k != 'original_path'} | {'original_url': f"/api/media/{row['id']}"}
+        return {k: v for k, v in row.items() if k not in ('original_path', 'thumbnail_path')} | {
+            'original_url': f"/api/media/{row['id']}",
+            'thumbnail_url': f"/api/media/{row['id']}/thumbnail" if row.get('thumbnail_path') else None}
 
     @app.get('/health')
     def health():
@@ -165,7 +183,7 @@ def create_app(settings: Settings | None = None):
     def images(board_id: UUID, limit: int = Query(60, ge=1, le=100), offset: int = Query(0, ge=0)):
         with connect() as conn:
             require_board(conn, board_id)
-            rows = conn.execute('SELECT * FROM images WHERE board_id=%s ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s',
+            rows = conn.execute(IMAGE_SELECT + 'WHERE i.board_id=%s ORDER BY i.created_at DESC,i.id DESC LIMIT %s OFFSET %s',
                                 (board_id, limit, offset)).fetchall()       # Fetch images for the specified board
         return [image_json(row) for row in rows]
 
@@ -200,6 +218,9 @@ def create_app(settings: Settings | None = None):
                 row = conn.execute('''INSERT INTO images(id,board_id,original_path,original_filename,mime_type,byte_size,width,height)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
                     (image_id, board_id, str(relative), filename, mime, size, width, height)).fetchone()
+                conn.execute('INSERT INTO image_features(image_id) VALUES (%s)', (image_id,))
+                conn.execute("INSERT INTO jobs(image_id,type) VALUES (%s,'cpu_process'),(%s,'ai_embed')", (image_id, image_id))
+                row = conn.execute(IMAGE_SELECT + 'WHERE i.id=%s', (image_id,)).fetchone()
             committed = True
             return image_json(row)
         
@@ -212,7 +233,7 @@ def create_app(settings: Settings | None = None):
     @app.get('/images/{image_id}')
     def image_detail(image_id: UUID):
         with connect() as conn:
-            row = conn.execute('SELECT * FROM images WHERE id=%s', (image_id,)).fetchone()
+            row = conn.execute(IMAGE_SELECT + 'WHERE i.id=%s', (image_id,)).fetchone()
         if not row:
             raise HTTPException(404, 'Image not found.')
         return image_json(row)
@@ -230,6 +251,20 @@ def create_app(settings: Settings | None = None):
         return FileResponse(path, media_type=row['mime_type'], headers={
             'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600'})
 
+    # Serve the thumbnail image file for a given image ID, ensuring it exists and is within the allowed storage directory.
+    @app.get('/media/{image_id}/thumbnail')
+    def thumbnail_media(image_id: UUID):
+        with connect() as conn:
+            row = conn.execute('SELECT thumbnail_path FROM images WHERE id=%s', (image_id,)).fetchone()
+        if not row or not row['thumbnail_path']:
+            raise HTTPException(404, 'Thumbnail is not ready.')
+        path = (settings.storage_dir / row['thumbnail_path']).resolve()
+        if not path.is_relative_to((settings.storage_dir / 'thumbnails').resolve()) or not path.is_file():
+            raise HTTPException(404, 'Thumbnail is unavailable.')
+        return FileResponse(path, media_type='image/jpeg', headers={
+            'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600'})
+
+    register_jobs(app, settings, connect)
     return app
 
 app = create_app()

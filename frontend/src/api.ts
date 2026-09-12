@@ -1,6 +1,9 @@
 export type Board = { id: string; name: string; description: string; created_at: string; image_count: number; cover_image_id: string | null }
 
-export type BoardImage = { id: string; board_id: string; original_filename: string; original_url: string; width: number; height: number; byte_size: number; created_at: string }
+export type ProcessingStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+export type PaletteColor = { hex: string; lab: [number, number, number]; weight: number }
+
+export type BoardImage = { id: string; board_id: string; original_filename: string; original_url: string; width: number; height: number; byte_size: number; created_at: string; thumbnail_url: string | null; palette: PaletteColor[] | null; embedding_ready: boolean; model_id: string | null; cpu_status: ProcessingStatus; ai_status: ProcessingStatus; cpu_error: string | null; ai_error: string | null }
 
 export function message(body: unknown, fallback: string): string {
   if (typeof body === 'object' && body && 'detail' in body) {

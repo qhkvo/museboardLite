@@ -113,7 +113,7 @@ dialog::backdrop { background: #ffffffcf; }
 .modal textarea { resize: vertical; }
 .modal .primary { width: 100%; margin-top: 32px; }
 .image-modal { padding: 0; width: min(1100px, 92vw); }
-.image-modal>img { display: block; max-height: 73vh; max-width: 100%; width: auto; height: auto; margin: 30px auto 0; image-orientation: from-image; }
+.image-modal>img { display: block; max-height: 55vh; max-width: 100%; width: auto; height: auto; margin: 30px auto 0; image-orientation: from-image; }
 .image-modal>div { padding: 24px 30px; }
 .image-modal h2 { font-size: 16px; font-weight: 400; overflow-wrap: anywhere; }
 .image-modal p, .image-modal a { font-size: 13px; color: var(--muted); margin-top: 8px; }
@@ -158,3 +158,10 @@ dialog::backdrop { background: #ffffffcf; }
   .error-banner { flex-wrap: wrap; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation: none!important; transition: none!important; } }
+
+.processing-states { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; font-size: 11px; line-height: 1.5; text-align: left; }
+.processing-states span { padding: 3px 7px; border-radius: 4px; background: #eee9df; color: #5d574b; }
+.processing-states span[data-status="succeeded"] { background: #e7eddf; color: #405334; }
+.processing-states span[data-status="failed"] { background: #f7e3dd; color: #923e2b; }
+.palette { display: flex; height: 30px; overflow: hidden; border-radius: 4px; margin: 12px 0; }
+.palette span { min-width: 2px; }

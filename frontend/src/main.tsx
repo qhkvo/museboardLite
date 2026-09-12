@@ -8,6 +8,14 @@ type UploadItem = { id: string; file: File; preview: string; status: 'waiting' |
 const initialBoard = new URLSearchParams(location.search).get('board')
 const sizeLabel = (n: number) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
 
+const processing = (image: BoardImage) => [image.cpu_status, image.ai_status].some(s => s === 'pending' || s === 'running')
+function Processing({ image }: { image: BoardImage }) {
+  return <div className="processing-states" aria-label="Image processing">
+    <span data-status={image.cpu_status} title={image.cpu_error ?? undefined}>{image.cpu_status === 'succeeded' ? 'Thumbnail ready' : image.cpu_status === 'failed' ? 'Thumbnail failed' : 'Making thumbnail…'}</span>
+    <span data-status={image.ai_status} title={image.ai_error ?? undefined}>{image.ai_status === 'succeeded' ? 'Visual features ready' : image.ai_status === 'failed' ? 'Visual features failed' : 'Finding visual features…'}</span>
+  </div>
+}
+
 function App() {
   const [boards, setBoards] = useState<Board[]>([])
   const [active, setActive] = useState<string | null>(initialBoard)
@@ -62,6 +70,35 @@ function App() {
     return () => controller.abort()
   }, [active, refresh])
   useEffect(() => { if (detail) imageDialog.current?.showModal() }, [detail])
+
+  // Refresh only pending visible images; preserve pagination and stop when all
+  // jobs are terminal. Abort stale requests when the board or image list changes.
+  useEffect(() => {
+    const pending = images.filter(processing)
+    if (!active || boardLoading || !pending.length) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const updated: BoardImage[] = []
+        // Bound request concurrency even after many pages have been loaded.
+        for (let i = 0; i < pending.length; i += 4) {
+          updated.push(...await Promise.all(pending.slice(i, i + 4).map(image =>
+            api<BoardImage>(`/images/${image.id}`, {signal: controller.signal}))))
+        }
+        if (controller.signal.aborted) return
+        const byId = new Map(updated.map(image => [image.id, image]))
+        setImages(previous => previous.map(image => byId.get(image.id) ?? image))
+        setDetail(previous => previous ? byId.get(previous.id) ?? previous : null)
+        setImageError('')
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          setImageError((e as Error).message)
+          setImages(previous => [...previous]) // Retry polling after a transient error.
+        }
+      }
+    }, 2000)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [active, boardLoading, images])
 
   function select(id: string | null) {
     clearUploads()
@@ -170,12 +207,12 @@ function App() {
           {uploads.length>0 && <section className="upload-panel" aria-label="Upload progress"><div className="upload-panel-heading"><strong aria-live="polite">{busy?'Adding your images…':`${uploads.filter(u=>u.status==='done').length} uploaded · ${uploads.filter(u=>u.status==='error').length} failed`}</strong><button disabled={busy} onClick={clearUploads}>Dismiss</button></div>{uploads.map(item=><div className="upload-row" key={item.id}>{item.preview?<img src={item.preview} alt=""/>:<Images size={24}/>}<div className="upload-description"><strong>{item.file.name}</strong>{item.status==='error'?<span className="file-error" role="alert">{item.error}</span>:<span>{item.status==='done'?'Added to board':item.status==='uploading'?(item.progress===100?'Checking image…':`${item.progress}% uploaded`):'Waiting…'}</span>}{item.status==='uploading'&&<progress value={item.progress} max={100} aria-label={`Uploading ${item.file.name}`}/>}</div>{item.status==='done'?<Check size={18}/>:item.status==='error'?<button disabled={busy} onClick={()=>void runUploads([item])}>Retry</button>:<LoaderCircle className="spin" size={18}/>}</div>)}</section>}
           <div className="section-line"><h2>Images <span>({board?.image_count ?? 0})</span></h2><span>Newest first</span></div>
           {imageError && <div className="error-banner" role="alert">{imageError}<button onClick={()=>setRefresh(n=>n+1)}>Try again</button></div>}
-          {boardLoading?<div className="loading"><LoaderCircle className="spin"/>Loading images…</div>:images.length?<><div className="image-grid">{images.map((image,index)=><button className="image-card" key={image.id} onClick={()=>setDetail(image)}><div className="image-frame"><img src={image.original_url} alt={image.original_filename} width={image.width} height={image.height} loading="lazy"/></div><div className="image-caption"><span className="catalog-number">{String(index+1).padStart(2,'0')} /</span><span>{image.original_filename}</span><ArrowUpRight size={14}/></div></button>)}</div>{more&&<button className="secondary load-more" disabled={loadingMore || busy} onClick={()=>void loadMore()}>{loadingMore?'Loading…':'Load more images'}</button>}</>:!imageError&&<div className="empty-board"><Images size={40} strokeWidth={1}/><h2>An empty collection.</h2><p>Add images to begin.</p></div>}
+          {boardLoading?<div className="loading"><LoaderCircle className="spin"/>Loading images…</div>:images.length?<><div className="image-grid">{images.map((image,index)=><button className="image-card" key={image.id} onClick={()=>setDetail(image)}><div className="image-frame"><img src={image.thumbnail_url ?? image.original_url} alt={image.original_filename} width={image.width} height={image.height} loading="lazy"/></div><div className="image-caption"><span className="catalog-number">{String(index+1).padStart(2,'0')} /</span><span>{image.original_filename}</span><ArrowUpRight size={14}/></div><Processing image={image}/></button>)}</div>{more&&<button className="secondary load-more" disabled={loadingMore || busy} onClick={()=>void loadMore()}>{loadingMore?'Loading…':'Load more images'}</button>}</>:!imageError&&<div className="empty-board"><Images size={40} strokeWidth={1}/><h2>An empty collection.</h2><p>Add images to begin.</p></div>}
         </>}
       </div>
     </main>
     <dialog ref={boardDialog} className="modal" onCancel={e=>{if(creating)e.preventDefault()}}><form onSubmit={createBoard}><button type="button" className="close-button" aria-label="Close new board" disabled={creating} onClick={()=>boardDialog.current?.close()}><X size={20}/></button><div className="eyebrow">NEW COLLECTION</div><h2>Create a board</h2><p>A title, a few words, a place to collect.</p><label>Board name<input name="name" placeholder="e.g. Quiet places" maxLength={100} required autoFocus/></label><label>Description <span>(optional)</span><textarea name="description" placeholder="What are you collecting?" maxLength={1000} rows={3}/></label>{formError&&<p className="file-error" role="alert">{formError}</p>}<button type="submit" className="primary" disabled={creating}>{creating?'Creating…':'Create board'}<Plus size={17}/></button></form></dialog>
-    <dialog ref={imageDialog} className="image-modal" onClose={()=>setDetail(null)}>{detail&&<><button className="close-button" aria-label="Close image" onClick={()=>imageDialog.current?.close()}><X/></button><img src={detail.original_url} alt={detail.original_filename}/><div><h2>{detail.original_filename}</h2><p>{detail.width} × {detail.height} · {sizeLabel(detail.byte_size)}</p><a href={detail.original_url} target="_blank" rel="noreferrer">Open original <ArrowUpRight size={15}/></a></div></>}</dialog>
+    <dialog ref={imageDialog} className="image-modal" onClose={()=>setDetail(null)}>{detail&&<><button className="close-button" aria-label="Close image" onClick={()=>imageDialog.current?.close()}><X/></button><img src={detail.original_url} alt={detail.original_filename}/><div><h2>{detail.original_filename}</h2><p>{detail.width} × {detail.height} · {sizeLabel(detail.byte_size)}</p><Processing image={detail}/>{detail.cpu_error && detail.cpu_status === 'failed' && <p className="file-error">Thumbnail: {detail.cpu_error}</p>}{detail.ai_error && detail.ai_status === 'failed' && <p className="file-error">Visual features: {detail.ai_error}</p>}{detail.palette && <div className="palette" aria-label="Dominant colors">{detail.palette.filter(color => color.weight > 0).map((color, index) => <span key={index} style={{backgroundColor: color.hex, flexGrow: color.weight}} title={`${color.hex} · ${Math.round(color.weight * 100)}%`} aria-label={`${color.hex}, ${Math.round(color.weight * 100)} percent`}/>)}</div>}<a href={detail.original_url} target="_blank" rel="noreferrer">Open original <ArrowUpRight size={15}/></a></div></>}</dialog>
   </div>
 }
 

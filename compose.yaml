@@ -20,8 +20,10 @@ services:
     environment:
       DATABASE_URL: postgresql://museboard:museboard@db:5432/museboard
       STORAGE_DIR: /data
+      WORKER_TOKEN: ${WORKER_TOKEN:?Set WORKER_TOKEN in .env (see docs/phase3.md)}
     volumes:
       - image_data:/data
+      - thumbnail_data:/data/thumbnails
     depends_on:
       db:
         condition: service_healthy
@@ -32,6 +34,38 @@ services:
       interval: 5s
       timeout: 3s
       retries: 15
+  cpu-worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    command: ["--mode", "cpu"]
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      WORKER_TOKEN: ${WORKER_TOKEN:?Set WORKER_TOKEN in .env}
+    volumes:
+      - image_data:/data:ro
+      - thumbnail_data:/data/thumbnails
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+  ai-worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    command: ["--mode", "ai"]
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      WORKER_TOKEN: ${WORKER_TOKEN:?Set WORKER_TOKEN in .env}
+    volumes:
+      - image_data:/data:ro
+      - ./models:/models:ro
+    depends_on:
+      api:
+        condition: service_healthy
   web:
     build: ./frontend
     ports:
@@ -42,3 +76,4 @@ services:
 volumes:
   postgres_data:
   image_data:
+  thumbnail_data:
