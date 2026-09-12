@@ -1,0 +1,44 @@
+name: museboard-lite
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: museboard
+      POSTGRES_USER: museboard
+      POSTGRES_PASSWORD: museboard
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U museboard -d museboard"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://museboard:museboard@db:5432/museboard
+      STORAGE_DIR: /data
+    volumes:
+      - image_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  postgres_data:
+  image_data:

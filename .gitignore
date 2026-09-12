@@ -7,3 +7,12 @@
 __pycache__/
 .DS_Store
 /tests/images/*
+
+# Phase 2 local dependencies and data
+/backend/.venv/
+/backend/.pytest_cache/
+/data/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo
+.env
