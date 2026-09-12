@@ -5,6 +5,9 @@ finding similar images by visual content or color. Create a board, upload images
 and open an image to explore its palette or discover related images across boards.
 Search uses your uploaded collection; it does not search the internet.
 
+![description](demo/main.png)
+![description](demo/selectImage.png)
+
 ## How it works
 
 - **React + TypeScript** provides boards, uploads, processing status, and image discovery.
