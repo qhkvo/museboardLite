@@ -21,7 +21,7 @@ def settings(tmp_path):
     schema = 'test_' + uuid4().hex
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
-    scoped = make_conninfo(dsn, options=f'-csearch_path={schema}')
+    scoped = make_conninfo(dsn, options=f'-csearch_path={schema},public')
     yield Settings(scoped, tmp_path)
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))

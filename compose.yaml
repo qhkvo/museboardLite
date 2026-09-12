@@ -1,7 +1,7 @@
 name: museboard-lite
 services:
   db:
-    image: postgres:17-alpine
+    build: ./database
     environment:
       POSTGRES_DB: museboard
       POSTGRES_USER: museboard

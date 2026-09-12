@@ -1,4 +1,4 @@
-"""Opt-in test of real C++ processes, real HTTP and PostgreSQL (no inference mocks)."""
+# Opt-in test of real C++ processes, real HTTP and PostgreSQL (no inference mocks).
 import io
 import os
 from pathlib import Path
@@ -68,6 +68,14 @@ def test_real_cpu_and_ai_workers(settings):
                 assert thumbnail.status_code == 200
                 with Image.open(io.BytesIO(thumbnail.content)) as decoded:
                     assert decoded.size == (512, 341)
+            # Real worker output is searchable in both discovery modes.
+            for mode in ['semantic', 'color']:
+                response = client.get(f'/images/{ids[0]}/similar?mode={mode}&include_weak=true')
+                assert response.status_code == 200, response.text
+                matches = response.json()['results']
+                assert len(matches) == 7
+                assert ids[0] not in {match['id'] for match in matches}
+                assert [match['distance'] for match in matches] == sorted(match['distance'] for match in matches)
             # A subsequent upload is picked up by already-running workers.
             data.seek(0)
             r = client.post(f'/boards/{board}/images', files={'file': ('later.png', data.getvalue())})

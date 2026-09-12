@@ -10,10 +10,11 @@ import psycopg
 from psycopg.rows import dict_row
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from PIL import Image, UnidentifiedImageError
 
 from .jobs import IMAGE_SELECT, register_jobs
+from .discovery import register_discovery
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,18 @@ class BoardCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default='', max_length=1000)
+
+class SubjectTags(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    subject_tags: list[str] = Field(max_length=10)
+
+    @field_validator('subject_tags')
+    @classmethod
+    def normalize(cls, tags):
+        normalized = sorted(set(' '.join(tag.lower().split()) for tag in tags))
+        if any(not tag or len(tag) > 40 or not all(c.isalnum() or c in ' -' for c in tag) for tag in normalized):
+            raise ValueError('Use 1–40 letters, numbers, spaces or hyphens per subject.')
+        return normalized
 
 class BodyLimit:
     # Middleware to limit the size of request bodies for certain HTTP methods.
@@ -130,7 +143,7 @@ def create_app(settings: Settings | None = None):
             conn.execute(Path(__file__).with_name('schema.sql').read_text())
         yield
 
-    app = FastAPI(title='Museboard API', version='0.3.0', lifespan=lifespan)
+    app = FastAPI(title='Museboard API', version='0.4.0', lifespan=lifespan)
     app.add_middleware(BodyLimit, upload_limit=settings.max_upload_bytes)
 
     @app.exception_handler(psycopg.Error)
@@ -230,6 +243,16 @@ def create_app(settings: Settings | None = None):
             if destination is not None and not committed:
                 destination.unlink(missing_ok=True)
 
+    @app.patch('/images/{image_id}/subjects')
+    def update_subjects(image_id: UUID, body: SubjectTags):
+        with connect() as conn:
+            updated = conn.execute('UPDATE images SET subject_tags=%s WHERE id=%s RETURNING id',
+                                   (body.subject_tags, image_id)).fetchone()
+            if not updated:
+                raise HTTPException(404, 'Image not found.')
+            row = conn.execute(IMAGE_SELECT + 'WHERE i.id=%s', (image_id,)).fetchone()
+        return image_json(row)
+
     @app.get('/images/{image_id}')
     def image_detail(image_id: UUID):
         with connect() as conn:
@@ -264,6 +287,7 @@ def create_app(settings: Settings | None = None):
         return FileResponse(path, media_type='image/jpeg', headers={
             'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600'})
 
+    register_discovery(app, connect, image_json)
     register_jobs(app, settings, connect)
     return app
 

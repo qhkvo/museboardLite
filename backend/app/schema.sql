@@ -52,3 +52,25 @@ IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=2) THEN
   INSERT INTO schema_migrations(version) VALUES (2);
 END IF;
 END $$;
+
+-- Migration 3: preserve existing embeddings while enabling exact vector search.
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+DO $$
+BEGIN
+IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=3) THEN
+  ALTER TABLE image_features DROP CONSTRAINT image_features_embedding_check;
+  ALTER TABLE image_features ALTER COLUMN embedding TYPE public.vector(512)
+    USING embedding::public.vector(512);
+  INSERT INTO schema_migrations(version) VALUES (3);
+END IF;
+END $$;
+
+-- Migration 4: user-maintained subject labels, independent of processing jobs.
+DO $$
+BEGIN
+IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=4) THEN
+  ALTER TABLE images ADD COLUMN subject_tags text[] NOT NULL DEFAULT '{}';
+  CREATE INDEX images_subject_tags_idx ON images USING gin(subject_tags);
+  INSERT INTO schema_migrations(version) VALUES (4);
+END IF;
+END $$;

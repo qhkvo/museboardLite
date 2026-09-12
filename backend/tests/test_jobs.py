@@ -85,7 +85,7 @@ def test_results_persist_without_overwrite(client, settings, parallel):
         assert fresh.get(f"/media/{image['id']}/thumbnail").status_code == 200
         assert 'thumbnail_path' not in result and 'attempt_token' not in result
     with psycopg.connect(settings.database_url) as conn:
-        palette, embedding, model = conn.execute('SELECT palette_json,embedding,model_id FROM image_features').fetchone()
+        palette, embedding, model = conn.execute('SELECT palette_json,embedding::real[],model_id FROM image_features').fetchone()
         assert len(palette) == 5 and len(embedding) == 512 and model == MODEL_ID
     assert complete(client, cj, cp).status_code == 409
 
